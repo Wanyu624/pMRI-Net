@@ -272,18 +272,13 @@ def ista_block(input_layer, layer_no):
 
 def inference_(input_u, n, reuse):
     layers = []
-    layers_J = []
     layers.append(input_u)
     for i in range(n):
         with tf.variable_scope('conv_%d' % i, reuse=reuse):
             [ phase_i, Ju_0, Ju, step_real, step_imag, soft_thr_real, soft_thr_imag] = ista_block(layers, i)
-            if i == 0:
-                layers_J.append(Ju_0)
-            else:
-                layers.append(phase_i)
-                layers_J.append(Ju)
+            layers.append(phase_i)
 
-    return [layers, layers_J, step_real, step_imag, soft_thr_real, soft_thr_imag]
+    return [layers, Ju, step_real, step_imag, soft_thr_real, soft_thr_imag]
 
 def compute_cost(Prediction, Ju, PhaseNumber):
 
@@ -293,7 +288,7 @@ def compute_cost(Prediction, Ju, PhaseNumber):
     ui_0_sum = tf.sqrt(tf.reduce_sum(tf.square(ui_0_abs), 1))
     cost_0 = tf.reduce_mean(tf.abs(ui_0_sum - true_sum))
     
-    cost = tf.reduce_mean(tf.abs( Ju[-1] - true_sum))
+    cost = tf.reduce_mean(tf.abs( Ju - true_sum))
 
     pred_abs = tf.sqrt(tf.square(tf.real(Prediction[-1])) + tf.square(tf.imag(Prediction[-1])))
     pred_sum = tf.sqrt(tf.reduce_sum(tf.square(pred_abs), 1))
@@ -304,7 +299,7 @@ def compute_cost(Prediction, Ju, PhaseNumber):
 #    cost_ui = tf.reduce_mean( ui_real + ui_imag )
     
     # ssim
-    output_abs = tf.expand_dims(tf.abs(Ju[-1]), -1)
+    output_abs = tf.expand_dims(tf.abs(Ju), -1)
     target_abs = tf.expand_dims(tf.abs(target), -1)
     L = tf.reduce_max(target_abs, axis=(1, 2, 3), keepdims=True) - tf.reduce_min(target_abs, axis=(1, 2, 3),
                                                                                  keepdims=True)
@@ -312,7 +307,7 @@ def compute_cost(Prediction, Ju, PhaseNumber):
 
     # MSE_VN  prediction vs. target 8.0   
     target_abs = tf.sqrt(tf.real((target) * tf.conj(target)) + 1e-12)
-    output_abs = tf.sqrt(tf.real((Ju[-1]) * tf.conj(Ju[-1])) + 1e-12)
+    output_abs = tf.sqrt(tf.real((Ju) * tf.conj(Ju)) + 1e-12)
     energy = tf.reduce_mean(tf.reduce_sum(((output_abs - target_abs) ** 2))) / batch_size 
            
     return [cost_0, cost, ssim, cost_ui, energy]
