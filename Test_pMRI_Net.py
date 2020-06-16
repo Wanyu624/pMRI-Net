@@ -292,9 +292,7 @@ def compute_cost(Prediction, Ju, PhaseNumber):
     ui_0_abs = tf.sqrt(tf.square(tf.real(ui_0)) + tf.square(tf.imag(ui_0)) + 1e-12)
     ui_0_sum = tf.sqrt(tf.reduce_sum(tf.square(ui_0_abs), 1))
     cost_0 = tf.reduce_mean(tf.abs(ui_0_sum - true_sum))
-    
-    true_abs = tf.sqrt(tf.square(tf.real(coil_imgs)) + tf.square(tf.imag(coil_imgs)) + 1e-12)
-    true_sum = tf.sqrt(tf.reduce_sum(tf.square(true_abs), 1))
+   
     cost = tf.reduce_mean(tf.abs( Ju[-1] - true_sum))
 
     pred_abs = tf.sqrt(tf.square(tf.real(Prediction[-1])) + tf.square(tf.imag(Prediction[-1])))
