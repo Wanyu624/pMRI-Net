@@ -26,7 +26,7 @@ ckpt_model_number = 1000
 
 CS_ratio = 31.6
 PhaseNumber = 5
-ntrain = 624
+ntrain = 625
 ntest = 15
 global_step = tf.Variable(tf.constant(0))   
 EpochNum = ckpt_model_number
