@@ -25,12 +25,12 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"       # # 0--2， 1--0， 2--1
 ckpt_model_number = 1000
 
 CS_ratio = 31.6
-PhaseNumber = 5
-ntrain = 526
+PhaseNumber = 3
+ntrain = 15
 ntest = 15
 global_step = tf.Variable(tf.constant(0))   
 EpochNum = ckpt_model_number
-batch_size = 2
+batch_size = 1
 size = 320
 
 def psnr(imag1, imag2):
@@ -80,45 +80,7 @@ def add_con2d_weight_k(w_shape, order_no):
     Weights = tf.get_variable(shape=w_shape, initializer=tf.contrib.layers.xavier_initializer_conv2d(), name='Weights_k_%d' % order_no)
     return Weights
 
-def k_block(k_space):
-    Weights5 = add_con2d_weight_k([3, 3, 15, 64], 5)
-    Weights6 = add_con2d_weight_k([3, 3, 64, 64], 6)
-    Weights7 = add_con2d_weight_k([3, 3, 64, 64], 7)
-    Weights8 = add_con2d_weight_k([3, 3, 64, 15], 8)
-
-    Weights5_ = add_con2d_weight_k([3, 3, 15, 64], 55)
-    Weights6_ = add_con2d_weight_k([3, 3, 64, 64], 66)
-    Weights7_ = add_con2d_weight_k([3, 3, 64, 64], 77)
-    Weights8_ = add_con2d_weight_k([3, 3, 64, 15], 88)
-    
-    k_real = tf.real(k_space)
-    k_imag = tf.imag(k_space)
-
-    k_real = tf.transpose(k_real, perm=[0, 2, 3, 1])
-    k_imag = tf.transpose(k_imag, perm=[0, 2, 3, 1])#(?, 320, 320, 15)
-        
-    k0_real =  tf.nn.relu(tf.nn.conv2d(k_real, Weights5, strides=[1, 1, 1, 1], padding='SAME'))
-    k0_imag =  tf.nn.relu(tf.nn.conv2d(k_imag, Weights5_, strides=[1, 1, 1, 1], padding='SAME'))
-
-    k0_real =  tf.nn.relu(tf.nn.conv2d(k0_real, Weights6, strides=[1, 1, 1, 1], padding='SAME'))
-    k0_imag =  tf.nn.relu(tf.nn.conv2d(k0_imag, Weights6_, strides=[1, 1, 1, 1], padding='SAME'))
-
-    k0_real =  tf.nn.relu(tf.nn.conv2d(k0_real, Weights7, strides=[1, 1, 1, 1], padding='SAME'))
-    k0_imag =  tf.nn.relu(tf.nn.conv2d(k0_imag, Weights7_, strides=[1, 1, 1, 1], padding='SAME'))
-
-    k0_real =  tf.nn.conv2d(k0_real, Weights8, strides=[1, 1, 1, 1], padding='SAME') + k_real
-    k0_imag =  tf.nn.conv2d(k0_imag, Weights8_, strides=[1, 1, 1, 1], padding='SAME') + k_imag
-    
-    k0_real = tf.transpose(k0_real, perm=[0, 3, 1, 2])
-    k0_imag = tf.transpose(k0_imag, perm=[0, 3, 1, 2])
-    print(k0_imag.shape)
-    
-    k_space = tf.complex(k0_real, k0_imag)
-    
-    return k_space
-
-learned_k = k_block(k_space)
-ui_0 = Utils.ifftc2d(learned_k)
+ui_0 = Utils.ifftc2d(k_space)
 x_input = tf.tile( tf.expand_dims(target, axis=1), multiples = [1, 15, 1, 1])
 
 ATf = mriAdjointOp( k_space, m)#(?, 15, 320, 320)
@@ -134,8 +96,8 @@ def add_con2d_weight(w_shape, order_no):
     return Weights
 
 def ista_block(input_layer, layer_no):
-    step_real = tf.Variable(0.05, dtype=tf.float32)
-    step_imag = tf.Variable(0.05, dtype=tf.float32)    
+    step_real = tf.Variable(0.01, dtype=tf.float32)
+    step_imag = tf.Variable(0.01, dtype=tf.float32)    
     soft_thr_real = tf.Variable(0.000, dtype=tf.float32)#0.0001 0.00005 
     soft_thr_imag = tf.Variable(0.000, dtype=tf.float32)
     conv_size = 32
@@ -192,108 +154,78 @@ def ista_block(input_layer, layer_no):
     x1_real = tf.add( tf.real(input_layer[-1]) - tf.scalar_mul(step_real, ATAu_real), tf.scalar_mul(step_real, ATf_real)) # X_k - lambda*A^T(AX -fi)
     x1_imag = tf.add( tf.imag(input_layer[-1]) - tf.scalar_mul(step_imag, ATAu_imag), tf.scalar_mul(step_imag, ATf_imag))#(?, 15, 320, 320)
      
-    x2_real = tf.transpose(x1_real, perm=[0, 2, 3, 1])
-    x2_imag = tf.transpose(x1_imag, perm=[0, 2, 3, 1])#(?, 320, 320, 15)
-#J    
-    x00_real =  tf.nn.relu(tf.nn.conv2d(x2_real, Weights555, strides=[1, 1, 1, 1], padding='SAME'))
-    x00_imag =  tf.nn.relu(tf.nn.conv2d(x2_imag, Weights555_, strides=[1, 1, 1, 1], padding='SAME'))
+#SOS
     
-    x00_real =  tf.nn.relu(tf.nn.conv2d(x00_real, Weights55, strides=[1, 1, 1, 1], padding='SAME'))#(?, 320, 320, 1)
-    x00_imag =  tf.nn.relu(tf.nn.conv2d(x00_imag, Weights55_, strides=[1, 1, 1, 1], padding='SAME'))
+    Ju_abs = tf.sqrt(tf.square(x1_real) + tf.square(x1_imag) )
+    Ju_0 = tf.sqrt(tf.reduce_sum(tf.square(Ju_abs), 1))
+    Ju_0 = tf.expand_dims(Ju_0, axis= 1)
+     
+    x2 = tf.transpose(Ju_0, perm=[0, 2, 3, 1])
     
-    x00_real =  tf.nn.relu(tf.nn.conv2d(x00_real, Weights666, strides=[1, 1, 1, 1], padding='SAME'))
-    x00_imag =  tf.nn.relu(tf.nn.conv2d(x00_imag, Weights666_, strides=[1, 1, 1, 1], padding='SAME'))
-    
-    x00_real =  tf.nn.conv2d(x00_real, Weights66, strides=[1, 1, 1, 1], padding='SAME')#(?, 320, 320, 1)
-    x00_imag =  tf.nn.conv2d(x00_imag, Weights66_, strides=[1, 1, 1, 1], padding='SAME')
-
-    J_real = tf.reshape(x00_real, shape = [-1, 320, 320 ])
-    J_imag = tf.reshape(x00_imag, shape = [-1, 320, 320 ])
-    
-    Ju_0 = tf.abs(tf.complex(J_real, J_imag)) #(?, 320, 320)
 #g    
-    x3_real = tf.nn.conv2d(x00_real, Weights0, strides=[1, 1, 1, 1], padding='SAME')
-    x3_imag = tf.nn.conv2d(x00_imag, Weights0_, strides=[1, 1, 1, 1], padding='SAME')
+    x3_real = tf.nn.conv2d(x2, Weights0, strides=[1, 1, 1, 1], padding='SAME') 
+    x3_imag = tf.nn.conv2d(x2, Weights0_, strides=[1, 1, 1, 1], padding='SAME')
 
-    x4_real = tf.nn.relu(tf.nn.conv2d(x3_real, Weights1, strides=[1, 1, 1, 1], padding='SAME'))
-    x4_imag = tf.nn.relu(tf.nn.conv2d(x3_imag, Weights1_, strides=[1, 1, 1, 1], padding='SAME'))
-    x44_real = tf.nn.conv2d(x4_real, Weights11, strides=[1, 1, 1, 1], padding='SAME')
-    x44_imag = tf.nn.conv2d(x4_imag, Weights11_, strides=[1, 1, 1, 1], padding='SAME')#(?, 320, 320, 32)
+    x4_real = tf.nn.relu(tf.nn.conv2d(x3_real, Weights1, strides=[1, 1, 1, 1], padding='SAME') - tf.nn.conv2d(x3_imag, Weights1_, strides=[1, 1, 1, 1], padding='SAME'))
+    x4_imag = tf.nn.relu(tf.nn.conv2d(x3_real, Weights1_, strides=[1, 1, 1, 1], padding='SAME') + tf.nn.conv2d(x3_imag, Weights1, strides=[1, 1, 1, 1], padding='SAME'))
+    
+    x44_real = tf.nn.conv2d(x4_real, Weights11, strides=[1, 1, 1, 1], padding='SAME') - tf.nn.conv2d(x4_imag, Weights11_, strides=[1, 1, 1, 1], padding='SAME')
+    x44_imag = tf.nn.conv2d(x4_real, Weights11_, strides=[1, 1, 1, 1], padding='SAME') + tf.nn.conv2d(x4_imag, Weights11, strides=[1, 1, 1, 1], padding='SAME') #(?, 320, 320, 32)
 #S
     x5_real = tf.multiply(tf.sign(x44_real), tf.nn.relu(tf.abs(x44_real) - soft_thr_real))
     x5_imag = tf.multiply(tf.sign(x44_imag), tf.nn.relu(tf.abs(x44_imag) - soft_thr_imag))
 #g~    
-    x6_real = tf.nn.relu(tf.nn.conv2d(x5_real, Weights2, strides=[1, 1, 1, 1], padding='SAME'))
-    x6_imag = tf.nn.relu(tf.nn.conv2d(x5_imag, Weights2_, strides=[1, 1, 1, 1], padding='SAME'))
-    x66_real = tf.nn.conv2d(x6_real, Weights22, strides=[1, 1, 1, 1], padding='SAME')
-    x66_imag = tf.nn.conv2d(x6_imag, Weights22_, strides=[1, 1, 1, 1], padding='SAME')
+    x6_real = tf.nn.relu(tf.nn.conv2d(x5_real, Weights2, strides=[1, 1, 1, 1], padding='SAME') - tf.nn.conv2d(x5_imag, Weights2_, strides=[1, 1, 1, 1], padding='SAME') )
+    x6_imag = tf.nn.relu(tf.nn.conv2d(x5_real, Weights2_, strides=[1, 1, 1, 1], padding='SAME') + tf.nn.conv2d(x5_imag, Weights2, strides=[1, 1, 1, 1], padding='SAME') )
+    
+    x66_real = tf.nn.conv2d(x6_real, Weights22, strides=[1, 1, 1, 1], padding='SAME') - tf.nn.conv2d(x6_imag, Weights22_, strides=[1, 1, 1, 1], padding='SAME')
+    x66_imag = tf.nn.conv2d(x6_real, Weights22_, strides=[1, 1, 1, 1], padding='SAME') + tf.nn.conv2d(x6_imag, Weights22, strides=[1, 1, 1, 1], padding='SAME')
 
-    x7_real = tf.nn.conv2d(x66_real, Weights3, strides=[1, 1, 1, 1], padding='SAME')
-    x7_imag = tf.nn.conv2d(x66_imag, Weights3_, strides=[1, 1, 1, 1], padding='SAME')#(?, 320, 320, 1)
+    x7_real = tf.nn.conv2d(x66_real, Weights3, strides=[1, 1, 1, 1], padding='SAME') - tf.nn.conv2d(x66_imag, Weights3_, strides=[1, 1, 1, 1], padding='SAME')
+    x7_imag = tf.nn.conv2d(x66_real, Weights3_, strides=[1, 1, 1, 1], padding='SAME') + tf.nn.conv2d(x66_imag, Weights3, strides=[1, 1, 1, 1], padding='SAME')#(?, 320, 320, 1)
 
 #J~
-    x88_real =  tf.nn.relu(tf.nn.conv2d(x7_real, Weights888, strides=[1, 1, 1, 1], padding='SAME'))
-    x88_imag =  tf.nn.relu(tf.nn.conv2d(x7_imag, Weights888_, strides=[1, 1, 1, 1], padding='SAME'))
+    x88_real =  tf.nn.relu(tf.nn.conv2d(x7_real, Weights888, strides=[1, 1, 1, 1], padding='SAME') - tf.nn.conv2d(x7_imag, Weights888_, strides=[1, 1, 1, 1], padding='SAME'))
+    x88_imag =  tf.nn.relu(tf.nn.conv2d(x7_real, Weights888_, strides=[1, 1, 1, 1], padding='SAME') + tf.nn.conv2d(x7_imag, Weights888, strides=[1, 1, 1, 1], padding='SAME'))
     
-    x8_real =  tf.nn.relu(tf.nn.conv2d(x88_real, Weights88, strides=[1, 1, 1, 1], padding='SAME'))#(?, 320, 320, 15)
-    x8_imag =  tf.nn.relu(tf.nn.conv2d(x88_imag, Weights88_, strides=[1, 1, 1, 1], padding='SAME'))
+    x8_real =  tf.nn.relu(tf.nn.conv2d(x88_real, Weights88, strides=[1, 1, 1, 1], padding='SAME') - tf.nn.conv2d(x88_imag, Weights88_, strides=[1, 1, 1, 1], padding='SAME'))#(?, 320, 320, 15)
+    x8_imag =  tf.nn.relu(tf.nn.conv2d(x88_real, Weights88_, strides=[1, 1, 1, 1], padding='SAME') + tf.nn.conv2d(x88_imag, Weights88, strides=[1, 1, 1, 1], padding='SAME'))
     
-    x99_real =  tf.nn.relu(tf.nn.conv2d(x8_real, Weights999, strides=[1, 1, 1, 1], padding='SAME'))
-    x99_imag =  tf.nn.relu(tf.nn.conv2d(x8_imag, Weights999_, strides=[1, 1, 1, 1], padding='SAME'))
+    x99_real =  tf.nn.relu(tf.nn.conv2d(x8_real, Weights999, strides=[1, 1, 1, 1], padding='SAME') - tf.nn.conv2d(x8_imag, Weights999_, strides=[1, 1, 1, 1], padding='SAME'))
+    x99_imag =  tf.nn.relu(tf.nn.conv2d(x8_real, Weights999_, strides=[1, 1, 1, 1], padding='SAME') + tf.nn.conv2d(x8_imag, Weights999, strides=[1, 1, 1, 1], padding='SAME'))
     
-    x9_real =  tf.nn.conv2d(x99_real, Weights99, strides=[1, 1, 1, 1], padding='SAME')#(?, 320, 320, 15)
-    x9_imag =  tf.nn.conv2d(x99_imag, Weights99_, strides=[1, 1, 1, 1], padding='SAME')
+    x9_real =  tf.nn.conv2d(x99_real, Weights99, strides=[1, 1, 1, 1], padding='SAME') - tf.nn.conv2d(x99_imag, Weights99_, strides=[1, 1, 1, 1], padding='SAME')#(?, 320, 320, 15)
+    x9_imag =  tf.nn.conv2d(x99_real, Weights99_, strides=[1, 1, 1, 1], padding='SAME') - tf.nn.conv2d(x99_imag, Weights99, strides=[1, 1, 1, 1], padding='SAME')
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
     x_real =  tf.transpose( x9_real, perm=[0, 3, 1, 2]) + x1_real#(?, 15, 320, 320) b_k+ r_k(u_k) 
     x_imag =  tf.transpose( x9_imag, perm=[0, 3, 1, 2]) + x1_imag#(?, 15, 320, 320)  
     
-    new = tf.complex(x_real, x_imag)#(?, 15, 320, 320)       
+    new = tf.complex(x_real, x_imag)#(?, 15, 320, 320)         
 
-    #Ju    
-    x00_real =  tf.nn.relu(tf.nn.conv2d(x9_real + x2_real, Weights555, strides=[1, 1, 1, 1], padding='SAME'))
-    x00_imag =  tf.nn.relu(tf.nn.conv2d(x9_imag + x2_imag, Weights555_, strides=[1, 1, 1, 1], padding='SAME'))
-    
-    x00_real =  tf.nn.relu(tf.nn.conv2d(x00_real, Weights55, strides=[1, 1, 1, 1], padding='SAME'))#(?, 320, 320, 1)
-    x00_imag =  tf.nn.relu(tf.nn.conv2d(x00_imag, Weights55_, strides=[1, 1, 1, 1], padding='SAME'))
-    
-    x00_real =  tf.nn.relu(tf.nn.conv2d(x00_real, Weights666, strides=[1, 1, 1, 1], padding='SAME'))
-    x00_imag =  tf.nn.relu(tf.nn.conv2d(x00_imag, Weights666_, strides=[1, 1, 1, 1], padding='SAME'))
-    
-    x00_real =  tf.nn.conv2d(x00_real, Weights66, strides=[1, 1, 1, 1], padding='SAME')#(?, 320, 320, 1)
-    x00_imag =  tf.nn.conv2d(x00_imag, Weights66_, strides=[1, 1, 1, 1], padding='SAME')
-
-    J_real = tf.reshape(x00_real, shape = [-1, 320, 320 ])
-    J_imag = tf.reshape(x00_imag, shape = [-1, 320, 320 ])
-    
-    Ju = tf.abs(tf.complex(J_real, J_imag)) #(?, 320, 320)
-    print(Ju.shape)   
-            
+    Ju_abs = tf.sqrt(tf.square(x_real) + tf.square(x_imag) )
+    Ju = tf.sqrt(tf.reduce_sum(tf.square(Ju_abs), 1))
+    print(Ju.shape)             
     return [new, Ju_0, Ju, step_real, step_imag, soft_thr_real, soft_thr_imag]
 
 def inference_(input_u, n, reuse):
     layers = []
-    layers_J = []
     layers.append(input_u)
     for i in range(n):
         with tf.variable_scope('conv_%d' % i, reuse=reuse):
             [ phase_i, Ju_0, Ju, step_real, step_imag, soft_thr_real, soft_thr_imag] = ista_block(layers, i)
-            if i == 0:
-                layers_J.append(Ju_0)
-            else:
-                layers.append(phase_i)
-                layers_J.append(Ju)
+            layers.append(phase_i)
 
-    return [layers, layers_J, step_real, step_imag, soft_thr_real, soft_thr_imag]
+    return [layers, Ju, step_real, step_imag, soft_thr_real, soft_thr_imag]
 
 def compute_cost(Prediction, Ju, PhaseNumber):
 
     true_abs = tf.sqrt(tf.square(tf.real(coil_imgs)) + tf.square(tf.imag(coil_imgs)) + 1e-12)
     true_sum = tf.sqrt(tf.reduce_sum(tf.square(true_abs), 1))
-    ui_0_abs = tf.sqrt(tf.square(tf.real(ui_0)) + tf.square(tf.imag(ui_0)) + 1e-12)
-    ui_0_sum = tf.sqrt(tf.reduce_sum(tf.square(ui_0_abs), 1))
-    cost_0 = tf.reduce_mean(tf.abs(ui_0_sum - true_sum))
-
-    cost = tf.reduce_mean(tf.abs( Ju[-1] - true_sum))
+#    ui_0_abs = tf.sqrt(tf.square(tf.real(ui_0)) + tf.square(tf.imag(ui_0)) + 1e-12)
+#    ui_0_sum = tf.sqrt(tf.reduce_sum(tf.square(ui_0_abs), 1))
+#    cost_0 = tf.reduce_mean(tf.abs(ui_0_sum - true_sum))
+    
+    cost = tf.reduce_mean(tf.abs( Ju - true_sum))
 
     pred_abs = tf.sqrt(tf.square(tf.real(Prediction[-1])) + tf.square(tf.imag(Prediction[-1])))
     pred_sum = tf.sqrt(tf.reduce_sum(tf.square(pred_abs), 1))
@@ -304,7 +236,7 @@ def compute_cost(Prediction, Ju, PhaseNumber):
 #    cost_ui = tf.reduce_mean( ui_real + ui_imag )
     
     # ssim
-    output_abs = tf.expand_dims(tf.abs(Ju[-1]), -1)
+    output_abs = tf.expand_dims(tf.abs(Ju), -1)
     target_abs = tf.expand_dims(tf.abs(target), -1)
     L = tf.reduce_max(target_abs, axis=(1, 2, 3), keepdims=True) - tf.reduce_min(target_abs, axis=(1, 2, 3),
                                                                                  keepdims=True)
@@ -312,12 +244,13 @@ def compute_cost(Prediction, Ju, PhaseNumber):
 
     # MSE_VN  prediction vs. target 8.0   
     target_abs = tf.sqrt(tf.real((target) * tf.conj(target)) + 1e-12)
-    output_abs = tf.sqrt(tf.real((Ju[-1]) * tf.conj(Ju[-1])) + 1e-12)
+    output_abs = tf.sqrt(tf.real((Ju) * tf.conj(Ju)) + 1e-12)
     energy = tf.reduce_mean(tf.reduce_sum(((output_abs - target_abs) ** 2))) / batch_size 
            
-    return [cost_0, cost, ssim, cost_ui, energy]
+    return [cost, ssim, cost_ui, energy]
 
-learning_rate = tf.train.exponential_decay(learning_rate= 0.0001,
+
+learning_rate = tf.train.exponential_decay(learning_rate= 0.0003,
                                        global_step=global_step,
                                        decay_steps= 100,
                                        decay_rate=0.95, staircase=False)    
@@ -326,10 +259,10 @@ learning_rate = tf.train.exponential_decay(learning_rate= 0.0001,
 
 #cost0 = tf.reduce_mean(tf.square(X0 - X_output))
 
-[cost_0, cost, ssim, cost_ui, energy] = compute_cost(Prediction, Ju, PhaseNumber)
+[cost, ssim, cost_ui, energy] = compute_cost(Prediction, Ju, PhaseNumber)
 
 t=1
-cost_all = cost_0 + cost + t*cost_ui
+cost_all =  cost + t*cost_ui
 
 optm_all = tf.train.AdamOptimizer(learning_rate=learning_rate, name='Adam').minimize(cost_all)
 
@@ -338,7 +271,7 @@ init = tf.global_variables_initializer()
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
 
-saver = tf.train.Saver(tf.global_variables(), max_to_keep=10)
+saver = tf.train.Saver(tf.global_variables(), max_to_keep=200)
 
 sess = tf.Session(config=config)
 sess.run(init)
@@ -391,7 +324,7 @@ for epoch_i in range(0, EpochNum+1):
 
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
-    if epoch_i % 1 == 0:
+    if epoch_i % 10 == 0:
         saver.save(sess, './%s/CS_Saved_Model_%d.ckpt' % (model_dir, epoch_i), write_meta_graph=False)
         
 print("Training Phase%d Finished" % ( PhaseNumber))
