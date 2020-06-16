@@ -284,48 +284,88 @@ sess.run(init)
 model_dir = 'Phase%d_ratio_0_%d' % (PhaseNumber, CS_ratio)
 log_file_name = "Log_output_%s.txt" % (model_dir)
 
-print("...................................")
-print("Phase Number is %d, CS ratio is %.2f" % (PhaseNumber, CS_ratio))
-print("...................................\n")
-print('Load Data...')
 
+result_file_name = "PSNR_Results.txt"
 
-data = sio.loadmat('Train_Data_pd/data.mat' )
+print('Load Test Data...')
+
+data = sio.loadmat('Test_Data_pd/data.mat' )
 
 U = data['U']
-
+print(U.shape)
 F = data['Y']
-
 Ui = data['Ui']
 
 
-for epoch_i in range(0, EpochNum+1):
-    randidx_all = np.random.permutation(ntrain)
-    for batch_i in range(ntrain // batch_size):
-        randidx = randidx_all[batch_i*batch_size:(batch_i+1)*batch_size]
-    
-        u = U[randidx, :, :]
-        ui = Ui[randidx, :, :, :]
-        f = F[randidx, :, :, :]
-        
-        feed_dict = {coil_imgs: ui, target: u, k_space: f} #(batch_size, 15,320, 320) 
-        sess.run(optm_all, feed_dict=feed_dict)
-        
-    output_data = "[%02d/%02d] cost_all: %.7f, cost_true: %.7f,energy: %.5f, ssim: %.5f, lr: %.6f, step_r:%.5f, step_i:%.5f, thr_r:%.5f, thr_i:%.5f  \n" % (epoch_i, EpochNum,#, theta: %.4f
-                   sess.run(cost_all, feed_dict=feed_dict), sess.run(cost, feed_dict=feed_dict), sess.run(energy, feed_dict=feed_dict), sess.run(ssim, feed_dict=feed_dict) ,
-                   sess.run(learning_rate, feed_dict={global_step:epoch_i}) , 
-                   sess.run(step_real, feed_dict=feed_dict), sess.run(step_imag, feed_dict=feed_dict),
-                   sess.run(soft_thr_real, feed_dict=feed_dict), sess.run(soft_thr_imag, feed_dict=feed_dict))#, theta 
-    print(output_data)
-    
-    output_file = open(log_file_name, 'a')
-    output_file.write(output_data)
-    output_file.close()
+ntest = U.shape[0]
+print(ntest)
+PSNR_All = np.zeros([1, ntest], dtype=np.float32)
+ERROR_All = np.zeros([1, ntest], dtype=np.float32)
+SSIM_All = np.zeros([1, ntest], dtype=np.float32)
+MSE_All = np.zeros([1, ntest], dtype=np.float32)
+TIME_All = np.zeros([1, ntest], dtype=np.float32)
+saver.restore(sess, './%s/CS_Saved_Model_%d.ckpt' % (model_dir, ckpt_model_number))
 
-    if not os.path.exists(model_dir):
-        os.makedirs(model_dir)
-    if epoch_i % 10 == 0:
-        saver.save(sess, './%s/CS_Saved_Model_%d.ckpt' % (model_dir, epoch_i), write_meta_graph=False)
-        
-print("Training Phase%d Finished" % ( PhaseNumber))
+result_file_name = "PSNR_Results_pd.txt"
 
+idx_all = np.arange(ntest)
+for imag_no in range(ntest):
+    randidx = idx_all[imag_no:imag_no+1]
+    u = U[randidx, :, :]
+    ui = Ui[randidx, :, :, :]
+    f = F[randidx, :, :, :]
+    
+    feed_dict = { coil_imgs: ui, target: u, k_space: f} #(batch_size, 15,320, 320) 
+    
+    start = time()
+    Prediction_value = sess.run(Ju[-1], feed_dict=feed_dict)
+    end = time()
+    
+    rec = np.reshape(Prediction_value, (size,size))
+    
+    reference = np.reshape( u, ( size,size))
+    #vn = np.reshape( vn, ( size,size))
+
+    rec_PSNR, relative_error =  psnr( reference , rec ) 
+    #vn_PSNR = psnr( vn , ref_vn) 
+    energy_value = sess.run(energy, feed_dict=feed_dict)
+    cost_value = sess.run(cost, feed_dict=feed_dict)
+    ssim_value = sess.run(ssim, feed_dict=feed_dict)
+    
+    #energy_op = tf.add_to_collection('energy_op', energy)
+    #energy_mean = sess.run(tf.get_collection('energy_op'))
+    
+    result = "Run time for %s:%.4f, PSNR:%.4f, relative_error:%.6f, ssim:%.4f, loss:%.6f \n" % (imag_no+1, (end - start), rec_PSNR, relative_error, ssim_value, cost_value)
+    print(result)
+    
+    #output_file.write(result)
+    
+    im_rec_name = "%s_rec_%s_%d.mat" % (imag_no+1, model_dir, ckpt_model_number)  
+    #im_coil_name = "s%s" % (imag_no+1)
+    
+    # save mat file
+    #Utils.saveAsMat(rec, im_rec_name, 'result',  mat_dict=None)
+    
+    # enhance image and save as png
+    v_min, v_max = Utils.getContrastStretchingLimits(np.abs(rec),
+                                                        saturated_pixel=0.002)
+    volume_enhanced = Utils.normalize(np.abs(rec), v_min=v_min, v_max=v_max)
+    
+    #Utils.imsave(volume_enhanced, im_rec_name)
+    
+    PSNR_All[0, imag_no] = rec_PSNR 
+    ERROR_All[0, imag_no] = relative_error
+    SSIM_All[0, imag_no] = ssim_value
+    MSE_All[0, imag_no] = energy_value
+
+output_data = "Phase%d, Avg REC PSNR is %.4f dB, Avg relative error is %.6f dB, Avg ssim is %.4f dB, ckpt NO. is %d %.6f \n" % (PhaseNumber, np.mean( PSNR_All), np.mean(ERROR_All), np.mean(SSIM_All), 
+                                                                                                                     ckpt_model_number, t)
+print(output_data)
+output_file = open(result_file_name, 'a')
+output_file.write(output_data)
+output_file.close()
+
+
+sess.close()
+
+print("Reconstruction READY")
