@@ -81,15 +81,15 @@ def add_con2d_weight_k(w_shape, order_no):
     return Weights
 
 def k_block(k_space):
-    Weights5 = add_con2d_weight_k([3, 3, 15, 32], 5)
-    Weights6 = add_con2d_weight_k([3, 3, 32, 32], 6)
-    Weights7 = add_con2d_weight_k([3, 3, 32, 32], 7)
-    Weights8 = add_con2d_weight_k([3, 3, 32, 15], 8)
+    Weights5 = add_con2d_weight_k([3, 3, 15, 64], 5)
+    Weights6 = add_con2d_weight_k([3, 3, 64, 64], 6)
+    Weights7 = add_con2d_weight_k([3, 3, 64, 64], 7)
+    Weights8 = add_con2d_weight_k([3, 3, 64, 15], 8)
 
-    Weights5_ = add_con2d_weight_k([3, 3, 15, 32], 55)
-    Weights6_ = add_con2d_weight_k([3, 3, 32, 32], 66)
-    Weights7_ = add_con2d_weight_k([3, 3, 32, 32], 77)
-    Weights8_ = add_con2d_weight_k([3, 3, 32, 15], 88)
+    Weights5_ = add_con2d_weight_k([3, 3, 15, 64], 55)
+    Weights6_ = add_con2d_weight_k([3, 3, 32, 64], 66)
+    Weights7_ = add_con2d_weight_k([3, 3, 64, 64], 77)
+    Weights8_ = add_con2d_weight_k([3, 3, 64, 15], 88)
     
     k_real = tf.real(k_space)
     k_imag = tf.imag(k_space)
