@@ -328,7 +328,8 @@ learning_rate = tf.train.exponential_decay(learning_rate= 0.0001,
 
 [cost_0, cost, ssim, cost_ui, energy] = compute_cost(Prediction, Ju, PhaseNumber)
 
-t=1
+t=0.00001
+a=0.01
 cost_all = cost_0 + cost + t*cost_ui
 
 optm_all = tf.train.AdamOptimizer(learning_rate=learning_rate, name='Adam').minimize(cost_all)
