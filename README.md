@@ -1,6 +1,5 @@
 # pMRI-Net
 
-The file "Train_pMRI_Net.py" is used for training pMRI-Net-K.
+The project 'pMRI-Net-ZF' implements the method described in "Deep Parallel MRI Reconstruction Network Without Coil Sensitivities"
+"https://arxiv.org/pdf/2008.01410.pdf"
 
-
-The file "Train_pMRI_SOS.py" is used for training pMRI-Net-ZF, but replace the non linear operator J as Sum of Square. In this project, we used complex convolution.
