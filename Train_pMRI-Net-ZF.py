@@ -22,7 +22,7 @@ import tensorflow.contrib.slim as slim
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"       # # 0--2， 1--0， 2--1
-ckpt_model_number = 1000
+ckpt_model_number = 3000
 
 CS_ratio = 31.6
 PhaseNumber = 5
