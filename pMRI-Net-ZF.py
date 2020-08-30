@@ -351,7 +351,7 @@ print("Training Phase%d Finished" % ( PhaseNumber))
 #___________________________________________________________________________________Test
 print('Load Test Data...')
     
-data = sio.loadmat('Train_Data_pd/data.mat' )
+data = sio.loadmat('Test_Data_pd/data.mat' )
 
 U = data['U']
 
