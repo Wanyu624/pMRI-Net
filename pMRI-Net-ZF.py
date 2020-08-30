@@ -19,7 +19,6 @@ from time import time
 from PIL import Image
 import math
 import tensorflow.contrib.slim as slim
-#from skimage.metrics import peak_signal_noise_ratio
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"       # # 0--2， 1--0， 2--1
@@ -28,38 +27,26 @@ ckpt_model_number = 3000
 CS_ratio = 31.6
 PhaseNumber = 5
 ntrain = 526
-ntest = 15
 global_step = tf.Variable(tf.constant(0))   
 EpochNum = ckpt_model_number
 batch_size = 2
 size = 320
 
 def psnr(imag1, imag2):
-
     mse = np.mean( ( abs(imag1) - abs(imag2) ) ** 2 )
     if mse == 0:
         return 100
     PIXEL_MAX = abs(imag1).max()
     relative_error = np.linalg.norm( abs(imag1) - abs(imag2), 'fro' )/np.linalg.norm( abs(imag1), 'fro')
-    return 20 * math.log10(PIXEL_MAX / math.sqrt(mse)), relative_error  
-
-
-#def psnr(imag1, imag2): #same
-#    temp = (abs(imag1) - abs(imag2)).flatten()
-#    mse = np.mean( ( temp.conj().T*temp ) )
-#    if mse == 0:
-#        return 100
-#    PIXEL_MAX = abs(imag1).max()
-#    relative_error = np.linalg.norm( abs(imag1) - abs(imag2), 'fro' )/np.linalg.norm( abs(imag1), 'fro')
-#    return 20 * np.log10(PIXEL_MAX / np.sqrt(mse)), relative_error  
+    return 20 * math.log10(PIXEL_MAX / math.sqrt(mse)), relative_error
 
 # Define a placeholder for input values
-Mask = sio.loadmat('masks_pd/uniform_31_56.mat')
+Mask = sio.loadmat('masks_pd/COR_PD_iPat4_masks.mat')
 mask = Utils.removePEOversampling( Utils.removeFEOversampling( Mask['mask']))
 m = np.tile( np.expand_dims(np.expand_dims( mask.astype(np.float32), axis=0), axis=1), (1, 15, 1, 1))
 
 target = tf.placeholder(shape=[None, size, size], dtype=tf.complex64)#u
-coil_imgs = tf.placeholder(shape=[None, 15, size, size], dtype=tf.complex64)#si
+coil_imgs = tf.placeholder(shape=[None, 15, size, size], dtype=tf.complex64)#ui
 k_space = tf.placeholder(shape=[None, 15, size, size], dtype=tf.complex64)#f
 
 def mriForwardOp(img, sampling_mask):
@@ -76,51 +63,10 @@ def mriAdjointOp(f, sampling_mask):
         Finv = Utils.ifftc2d(tf.complex(tf.real(f) * sampling_mask, tf.imag(f) * sampling_mask))
 
         return Finv
-
-def add_con2d_weight_k(w_shape, order_no):
-    Weights = tf.get_variable(shape=w_shape, initializer=tf.contrib.layers.xavier_initializer_conv2d(), name='Weights_k_%d' % order_no)
-    return Weights
-
-def k_block(k_space):
-    Weights5 = add_con2d_weight_k([3, 3, 15, 64], 5)
-    Weights6 = add_con2d_weight_k([3, 3, 64, 64], 6)
-    Weights7 = add_con2d_weight_k([3, 3, 64, 64], 7)
-    Weights8 = add_con2d_weight_k([3, 3, 64, 15], 8)
-
-    Weights5_ = add_con2d_weight_k([3, 3, 15, 64], 55)
-    Weights6_ = add_con2d_weight_k([3, 3, 64, 64], 66)
-    Weights7_ = add_con2d_weight_k([3, 3, 64, 64], 77)
-    Weights8_ = add_con2d_weight_k([3, 3, 64, 15], 88)
     
-    k_real = tf.real(k_space)
-    k_imag = tf.imag(k_space)
-
-    k_real = tf.transpose(k_real, perm=[0, 2, 3, 1])
-    k_imag = tf.transpose(k_imag, perm=[0, 2, 3, 1])#(?, 320, 320, 15)
-        
-    k0_real =  tf.nn.relu(tf.nn.conv2d(k_real, Weights5, strides=[1, 1, 1, 1], padding='SAME'))
-    k0_imag =  tf.nn.relu(tf.nn.conv2d(k_imag, Weights5_, strides=[1, 1, 1, 1], padding='SAME'))
-
-    k0_real =  tf.nn.relu(tf.nn.conv2d(k0_real, Weights6, strides=[1, 1, 1, 1], padding='SAME'))
-    k0_imag =  tf.nn.relu(tf.nn.conv2d(k0_imag, Weights6_, strides=[1, 1, 1, 1], padding='SAME'))
-
-    k0_real =  tf.nn.relu(tf.nn.conv2d(k0_real, Weights7, strides=[1, 1, 1, 1], padding='SAME'))
-    k0_imag =  tf.nn.relu(tf.nn.conv2d(k0_imag, Weights7_, strides=[1, 1, 1, 1], padding='SAME'))
-
-    k0_real =  tf.nn.conv2d(k0_real, Weights8, strides=[1, 1, 1, 1], padding='SAME') + k_real
-    k0_imag =  tf.nn.conv2d(k0_imag, Weights8_, strides=[1, 1, 1, 1], padding='SAME') + k_imag
-    
-    k0_real = tf.transpose(k0_real, perm=[0, 3, 1, 2])
-    k0_imag = tf.transpose(k0_imag, perm=[0, 3, 1, 2])
-    print(k0_imag.shape)
-    
-    k_space = tf.complex(k0_real, k0_imag)
-    
-    return k_space
-
-learned_k = k_block(k_space)
-ui_0 = Utils.ifftc2d(learned_k)
-x_input = tf.tile( tf.expand_dims(target, axis=1), multiples = [1, 15, 1, 1])
+ui_0 =  Utils.ifftc2d( k_space)
+x_input = tf.tile( tf.expand_dims(target, axis= 1), multiples = [1, 15, 1, 1])
+ui_true = coil_imgs
 
 ATf = mriAdjointOp( k_space, m)#(?, 15, 320, 320)
 ATf_real = tf.real(ATf)
@@ -135,10 +81,10 @@ def add_con2d_weight(w_shape, order_no):
     return Weights
 
 def ista_block(input_layer, layer_no):
-    step_real = tf.Variable(0.05, dtype=tf.float32)
-    step_imag = tf.Variable(0.05, dtype=tf.float32)    
-    soft_thr_real = tf.Variable(0.000, dtype=tf.float32)#0.0001 0.00005 
-    soft_thr_imag = tf.Variable(0.000, dtype=tf.float32)
+    step_real = tf.Variable(0.1, dtype=tf.float32)
+    step_imag = tf.Variable(0.1, dtype=tf.float32)    
+    soft_thr_real = tf.Variable(0.0001, dtype=tf.float32)#0.0001 0.00005 
+    soft_thr_imag = tf.Variable(0.0001, dtype=tf.float32)
     conv_size = 32
     filter_size = 9
 
@@ -183,6 +129,7 @@ def ista_block(input_layer, layer_no):
     Weights999_ = add_con2d_weight([3, 3, 64, 64], 9199)
     Weights99_ = add_con2d_weight([3, 3, 64, 15], 919)
 
+    
 #_______________________________________________________________________________________________________________________________________    
     
     Au =  mriForwardOp(input_layer[-1], m)
@@ -195,26 +142,28 @@ def ista_block(input_layer, layer_no):
      
     x2_real = tf.transpose(x1_real, perm=[0, 2, 3, 1])
     x2_imag = tf.transpose(x1_imag, perm=[0, 2, 3, 1])#(?, 320, 320, 15)
+        
 #J    
-    x00_real =  tf.nn.relu(tf.nn.conv2d(x2_real, Weights555, strides=[1, 1, 1, 1], padding='SAME'))
-    x00_imag =  tf.nn.relu(tf.nn.conv2d(x2_imag, Weights555_, strides=[1, 1, 1, 1], padding='SAME'))
+    x0_real =  tf.nn.relu(tf.nn.conv2d(x2_real, Weights555, strides=[1, 1, 1, 1], padding='SAME'))
+    x0_imag =  tf.nn.relu(tf.nn.conv2d(x2_imag, Weights555_, strides=[1, 1, 1, 1], padding='SAME'))
     
-    x00_real =  tf.nn.relu(tf.nn.conv2d(x00_real, Weights55, strides=[1, 1, 1, 1], padding='SAME'))#(?, 320, 320, 1)
-    x00_imag =  tf.nn.relu(tf.nn.conv2d(x00_imag, Weights55_, strides=[1, 1, 1, 1], padding='SAME'))
+    x0_real =  tf.nn.relu(tf.nn.conv2d(x0_real, Weights55, strides=[1, 1, 1, 1], padding='SAME'))#(?, 320, 320, 1)
+    x0_imag =  tf.nn.relu(tf.nn.conv2d(x0_imag, Weights55_, strides=[1, 1, 1, 1], padding='SAME'))
     
-    x00_real =  tf.nn.relu(tf.nn.conv2d(x00_real, Weights666, strides=[1, 1, 1, 1], padding='SAME'))
-    x00_imag =  tf.nn.relu(tf.nn.conv2d(x00_imag, Weights666_, strides=[1, 1, 1, 1], padding='SAME'))
+    x0_real =  tf.nn.relu(tf.nn.conv2d(x0_real, Weights666, strides=[1, 1, 1, 1], padding='SAME'))
+    x0_imag =  tf.nn.relu(tf.nn.conv2d(x0_imag, Weights666_, strides=[1, 1, 1, 1], padding='SAME'))
     
-    x00_real =  tf.nn.conv2d(x00_real, Weights66, strides=[1, 1, 1, 1], padding='SAME')#(?, 320, 320, 1)
-    x00_imag =  tf.nn.conv2d(x00_imag, Weights66_, strides=[1, 1, 1, 1], padding='SAME')
+    x0_real =  tf.nn.conv2d(x0_real, Weights66, strides=[1, 1, 1, 1], padding='SAME')#(?, 320, 320, 1)
+    x0_imag =  tf.nn.conv2d(x0_imag, Weights66_, strides=[1, 1, 1, 1], padding='SAME')
 
-    J_real = tf.reshape(x00_real, shape = [-1, 320, 320 ])
-    J_imag = tf.reshape(x00_imag, shape = [-1, 320, 320 ])
+    J_real = tf.reshape(x0_real, shape = [-1, 320, 320 ])
+    J_imag = tf.reshape(x0_imag, shape = [-1, 320, 320 ])
     
     Ju_0 = tf.abs(tf.complex(J_real, J_imag)) #(?, 320, 320)
+    print(Ju_0.shape)
 #g    
-    x3_real = tf.nn.conv2d(x00_real, Weights0, strides=[1, 1, 1, 1], padding='SAME')
-    x3_imag = tf.nn.conv2d(x00_imag, Weights0_, strides=[1, 1, 1, 1], padding='SAME')
+    x3_real = tf.nn.conv2d( x0_real, Weights0, strides=[1, 1, 1, 1], padding='SAME')
+    x3_imag = tf.nn.conv2d( x0_imag, Weights0_, strides=[1, 1, 1, 1], padding='SAME')
 
     x4_real = tf.nn.relu(tf.nn.conv2d(x3_real, Weights1, strides=[1, 1, 1, 1], padding='SAME'))
     x4_imag = tf.nn.relu(tf.nn.conv2d(x3_imag, Weights1_, strides=[1, 1, 1, 1], padding='SAME'))
@@ -266,9 +215,9 @@ def ista_block(input_layer, layer_no):
     J_real = tf.reshape(x00_real, shape = [-1, 320, 320 ])
     J_imag = tf.reshape(x00_imag, shape = [-1, 320, 320 ])
     
-    Ju = tf.abs(tf.complex(J_real, J_imag)) #(?, 320, 320)
+    Ju = tf.complex(J_real, J_imag) #(?, 320, 320)
     print(Ju.shape)   
-            
+      
     return [new, Ju_0, Ju, step_real, step_imag, soft_thr_real, soft_thr_imag]
 
 def inference_(input_u, n, reuse):
@@ -287,22 +236,23 @@ def inference_(input_u, n, reuse):
     return [layers, layers_J, step_real, step_imag, soft_thr_real, soft_thr_imag]
 
 def compute_cost(Prediction, Ju, PhaseNumber):
-
-    true_abs = tf.sqrt(tf.square(tf.real(coil_imgs)) + tf.square(tf.imag(coil_imgs)) + 1e-12)
+    
+    true_abs = tf.sqrt(tf.square(tf.real(ui_true)) + tf.square(tf.imag(ui_true)))
     true_sum = tf.sqrt(tf.reduce_sum(tf.square(true_abs), 1))
-    ui_0_abs = tf.sqrt(tf.square(tf.real(ui_0)) + tf.square(tf.imag(ui_0)) + 1e-12)
-    ui_0_sum = tf.sqrt(tf.reduce_sum(tf.square(ui_0_abs), 1))
-    cost_0 = tf.reduce_mean(tf.abs(ui_0_sum - true_sum))
-
-    cost = tf.reduce_mean(tf.abs( Ju[-1] - true_sum))
+    cost = tf.reduce_mean(tf.abs( tf.abs(Ju[-1]) - true_sum))
 
     pred_abs = tf.sqrt(tf.square(tf.real(Prediction[-1])) + tf.square(tf.imag(Prediction[-1])))
     pred_sum = tf.sqrt(tf.reduce_sum(tf.square(pred_abs), 1))
     cost_ui = tf.reduce_mean(tf.abs( pred_sum - true_sum))
 
-#    ui_real =  tf.abs((tf.real(Prediction[-1]) - tf.real(coil_imgs)))
-#    ui_imag =  tf.abs((tf.imag(Prediction[-1]) - tf.imag(coil_imgs)))
-#    cost_ui = tf.reduce_mean( ui_real + ui_imag )
+    cost_ui_r = tf.reduce_mean(tf.square( tf.real(Prediction[-1] - ui_true)))
+    cost_ui_i = tf.reduce_mean(tf.square( tf.imag(Prediction[-1] - ui_true)))
+    cost_ui = cost_ui_r + cost_ui_i
+    ui_r = tf.reduce_mean(tf.square( tf.real( ui_true)))
+    ui_i = tf.reduce_mean(tf.square( tf.imag( ui_true)))
+    ui = ui_r + ui_i
+    
+    ui_rmse =  cost_ui / ui
     
     # ssim
     output_abs = tf.expand_dims(tf.abs(Ju[-1]), -1)
@@ -316,22 +266,21 @@ def compute_cost(Prediction, Ju, PhaseNumber):
     output_abs = tf.sqrt(tf.real((Ju[-1]) * tf.conj(Ju[-1])) + 1e-12)
     energy = tf.reduce_mean(tf.reduce_sum(((output_abs - target_abs) ** 2))) / batch_size 
            
-    return [cost_0, cost, ssim, cost_ui, energy]
+    return [cost, ssim, cost_ui, ui_rmse]
 
 learning_rate = tf.train.exponential_decay(learning_rate= 0.0001,
                                        global_step=global_step,
                                        decay_steps= 100,
-                                       decay_rate=0.95, staircase=False)    
+                                       decay_rate=0.992, staircase=False)    
 
-[Prediction, Ju, step_real, step_imag, soft_thr_real, soft_thr_imag] = inference_(ui_0, PhaseNumber, reuse=False)
+[Prediction, Ju,  step_real, step_imag, soft_thr_real, soft_thr_imag] = inference_(ui_0, PhaseNumber, reuse=False)
 
 #cost0 = tf.reduce_mean(tf.square(X0 - X_output))
 
-[cost_0, cost, ssim, cost_ui, energy] = compute_cost(Prediction, Ju, PhaseNumber)
+[cost, ssim, cost_ui, ui_rmse] = compute_cost(Prediction, Ju, PhaseNumber)
 
 t=0.00001
-a=0.01
-cost_all = a*cost_0 + cost + t*cost_ui
+cost_all = cost + t*cost_ui
 
 optm_all = tf.train.AdamOptimizer(learning_rate=learning_rate, name='Adam').minimize(cost_all)
 
@@ -340,27 +289,24 @@ init = tf.global_variables_initializer()
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
 
-saver = tf.train.Saver(tf.global_variables(), max_to_keep=10)
+saver = tf.train.Saver(tf.global_variables(), max_to_keep=200)
 
 sess = tf.Session(config=config)
 sess.run(init)
 
 #ISTA_logits = slim.get_variables_to_restore()
-#init_Weights = 'Phase3_ratio_0_31' + '/CS_Saved_Model_580.ckpt' 
+#init_Weights = 'pd_Phase5_loss' + '/CS_Saved_Model_580.ckpt' 
 #init_, init_feeddic = slim.assign_from_checkpoint(init_Weights, ISTA_logits, ignore_missing_vars = True)
 #sess.run(init_, init_feeddic)
 
 model_dir = 'pd_Phase%d_ZF' % (PhaseNumber)
 log_file_name = "Log_output_%s.txt" % (model_dir)
-
 #___________________________________________________________________________________Train
-#If you use this code only for testing, please commit lines 358-403
 
 print("...................................")
-print("Phase Number is %d, CS ratio is %.2f" % (PhaseNumber, CS_ratio))
+print("Phase Number is %d" % (PhaseNumber))
 print("...................................\n")
 print('Load Data...')
-
 
 data = sio.loadmat('Train_Data_pd/data.mat' )
 
@@ -370,8 +316,7 @@ F = data['Y']
 
 Ui = data['Ui']
 
-
-for epoch_i in range(0, EpochNum+1):
+for epoch_i in range(EpochNum+1):
     randidx_all = np.random.permutation(ntrain)
     for batch_i in range(ntrain // batch_size):
         randidx = randidx_all[batch_i*batch_size:(batch_i+1)*batch_size]
@@ -383,11 +328,10 @@ for epoch_i in range(0, EpochNum+1):
         feed_dict = {coil_imgs: ui, target: u, k_space: f} #(batch_size, 15,320, 320) 
         sess.run(optm_all, feed_dict=feed_dict)
         
-    output_data = "[%02d/%02d] cost_all: %.7f, cost_true: %.7f,energy: %.5f, ssim: %.5f, lr: %.6f, step_r:%.5f, step_i:%.5f, thr_r:%.5f, thr_i:%.5f  \n" % (epoch_i, EpochNum,#, theta: %.4f
-                   sess.run(cost_all, feed_dict=feed_dict), sess.run(cost, feed_dict=feed_dict), sess.run(energy, feed_dict=feed_dict), sess.run(ssim, feed_dict=feed_dict) ,
+    output_data = "[%02d/%02d]  cost_true: %.7f, lr: %.10f, step_r:%.5f \n" % (epoch_i, EpochNum,#, theta: %.4f
+                   sess.run(cost, feed_dict=feed_dict),
                    sess.run(learning_rate, feed_dict={global_step:epoch_i}) , 
-                   sess.run(step_real, feed_dict=feed_dict), sess.run(step_imag, feed_dict=feed_dict),
-                   sess.run(soft_thr_real, feed_dict=feed_dict), sess.run(soft_thr_imag, feed_dict=feed_dict))#, theta 
+                   sess.run(step_real, feed_dict=feed_dict))#, theta 
     print(output_data)
     
     output_file = open(log_file_name, 'a')
@@ -396,8 +340,11 @@ for epoch_i in range(0, EpochNum+1):
 
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
-    if epoch_i % 1 == 0:
+    if epoch_i >= 200:
         saver.save(sess, './%s/CS_Saved_Model_%d.ckpt' % (model_dir, epoch_i), write_meta_graph=False)
+    else:
+        if epoch_i % 50 == 0:
+            saver.save(sess, './%s/CS_Saved_Model_%d.ckpt' % (model_dir, epoch_i), write_meta_graph=False)
         
 print("Training Phase%d Finished" % ( PhaseNumber))
 
@@ -452,7 +399,8 @@ for imag_no in range(ntest):
     
     #output_file.write(result)
     
-    im_rec_name = "%s_rec_k_%d.mat" % (imag_no+1, ckpt_model_number)  
+    im_rec_name = "%s_rec_k_c_%d.mat" % (imag_no+1, ckpt_model_number)  
+    #im_coil_name = "s%s" % (imag_no+1)
     
     # save mat file
     Utils.saveAsMat(rec, im_rec_name, 'result',  mat_dict=None)
