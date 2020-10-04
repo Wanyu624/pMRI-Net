@@ -15,7 +15,7 @@ The code was implementated on Window 10 via tensorflow-gpu 1.10.0, python 3.6.10
 
 For training the network, simply use
 
-python pMRI-CNet-K.py
+'''python pMRI-CNet-K.py'''
 
 
 # Testing
