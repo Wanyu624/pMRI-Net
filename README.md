@@ -6,8 +6,9 @@ The project 'pMRI-Net-ZF' implements the method described in "Deep Parallel MRI 
 Test data, learned weights and sampling mask can be downloaded in https://drive.google.com/drive/folders/1jVV0qk_4iZlY10wKadQiAEP4Sr1V6Z9N?usp=sharing
 
 
-The file named 'pd_Phase5_ZF' is learned weights for 'pMRI-Net-ZF.py'
-The file named 'pd_Phase4_K_c' is learned weights for 'pMRI-CNet-K.py'
+The file named 'pd_Phase5_ZF' is learned weights for 'pMRI-Net-ZF.py'.
+
+The file named 'pd_Phase4_K_c' is learned weights for 'pMRI-CNet-K.py'.
 
 # Requirements
 
