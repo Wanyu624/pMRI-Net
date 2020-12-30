@@ -27,4 +27,4 @@ or
 
 The reconstruction process is automatically start after training process stopped for certain epochs.
 We provided the learned weights that has already trained, you can just delete the training part in the code.
-The output is ```*.mat``` file
+The output are 15 recontructed knee images as ```*.mat```.
